@@ -73,10 +73,10 @@ class VaporSorptionSystem:
         return self.pf * ((self.vc + self.vs) * (0.01 ** 3)) / (self.R * self.T)
 
     def _final_mol_in_system_at_prev_step(self):
-        return self.pf_minus1 * ((self.vc + self.vs) * 0.01 ** 3) / (self.R * self.T)
+        return self.pf_minus1 * ((self.vc + self.vs) * (0.01 ** 3)) / (self.R * self.T)
 
     def _final_mol_in_charge_chamber_at_prev_step(self):
-        return self.pcf_minus1 * (self.vc * 0.01 ** 3) / (self.R * self.T)
+        return self.pcf_minus1 * (self.vc * (0.01 ** 3)) / (self.R * self.T)
 
     def n_p(self):
         n_c0 = self._init_mol_in_charge_chamber()
@@ -105,6 +105,65 @@ class VaporSorptionSystem:
             self.n_p(),
             self.np_variable_dict)
         print(sympy.latex(sympy.simplify(n_p_variance)))
+        print(sympy.latex(n_p_variance))
+        print(sympy.latex(sympy.factor(n_p_variance)))
+
+
+class GasSorptionSystem:
+    class Constants:
+        B = sympy.Symbol("B")
+        A = sympy.Symbol("A")
+        R = sympy.Symbol("R")
+        T = sympy.Symbol("T")
+
+    def __init__(self):
+        pass
+        # self.vars = Vars()
+
+    class Vars:
+        # just a convenient wrapper for all the variable definitions
+        def __init__(self):
+            pass
+
+    class PengRobinsonEquation:
+        def __init__(self, var_subscript, constants):
+            self.vmol = sympy.Symbol("vmol_" + var_subscript)
+            self.pressure = sympy.Symbol("p_" + var_subscript)
+            self.constants = constants
+
+        def original_objective_function(self):
+            """
+                Original objective function as seen in the PR expression within the gas sorption template
+                We need to solve this analytically for molar volume of the system
+                In sympy, if you try to solve an expression, it implicitly sets the expression to zero to solve
+
+            """
+            # from VBA code:
+            # expression = vmol * (
+            #   pressure * vmol ^ 2
+            #   + (pressure * B - R * temperature) * vmol
+            #   + (A - 2 * R * temperature * B - 3 * pressure * (B ^ 2))
+            # )
+            # + pressure * B ^ 3 + R * temperature * B ^ 2 - A * B
+
+            objective = self.vmol * (
+                    self.pressure * self.vmol**2
+                    + (self.pressure * self.constants.B - self.constants.R * self.constants.T) * self.vmol
+                    + (self.constants.A - 2 * self.constants.R * self.constants.T * self.constants.B - 3 *
+                       self.pressure * (self.constants.B**2))
+                    )\
+                + self.pressure * self.constants.B ** 3 + self.constants.R * self.constants.T * self.constants.B ** 2 \
+                - self.constants.A * self.constants.B
+            return objective
+
+        def get_expression_for_moles(self):
+            print(sympy.latex(self.original_objective_function()))
+            result = sympy.solve(self.original_objective_function(), self.vmol)
+            print(len(result))
+            print(sympy.latex(sympy.simplify(result[0])))
+
+    def test(self):
+        self.PengRobinsonEquation("test", self.Constants).get_expression_for_moles()
 
 
 class ErrorPropagation:
@@ -121,18 +180,23 @@ class ErrorPropagation:
         """
         variance_derivative_dict = {}
         for variable in variable_variance_dict.keys():
+            if variable_variance_dict[variable] in variance_derivative_dict:
+                # what you really need should do is keep track of the varaible rather than the variance,
+                # since the variance might be reused
+                print("a duplicate was seen, this is the mistake")
             variance_derivative_dict[variable_variance_dict[variable]] = sympy.diff(equation, variable)
 
         dummy = sympy.Symbol("dummy")  # I honestly, cannot remember the easier way to create an empty expression
         result = dummy
         for variance in variance_derivative_dict.keys():
-            result = result + variance ** 2 * variance_derivative_dict[variance]**2
+            result = result + (variance ** 2) * (variance_derivative_dict[variance]**2)
 
         result = result - dummy
         result = sympy.sqrt(result)
         return result
 
 
+# GasSorptionSystem().test() # fundamentally should not work
 VaporSorptionSystem().concentration_variance()
 VaporSorptionSystem().n_p_variance()
 VaporSorptionSystem(pressure_dependent_error=False).n_p_variance()
