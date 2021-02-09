@@ -1,4 +1,9 @@
 import sympy
+from julia import Pkg
+Pkg.activate(".\\JuliaFunctions")
+from julia import JuliaFunctions
+
+print("done with julia")
 
 
 class VaporSorptionSystem:
