@@ -100,13 +100,14 @@ class VaporSorptionSystem:
             print("Pressure dependent n_p error: ", end='')
         else:
             print("Pressure independent n_p error: ", end='')
+        print()
 
         n_p_variance = ErrorPropagation.determine_variance(
             self.n_p(),
             self.np_variable_dict)
-        print(sympy.latex(sympy.simplify(n_p_variance)))
-        print(sympy.latex(n_p_variance))
-        print(sympy.latex(sympy.factor(n_p_variance)))
+        print("Simplified:", sympy.latex(sympy.simplify(n_p_variance)))
+        print("Raw:", sympy.latex(n_p_variance))
+        print()
 
 
 class GasSorptionSystem:
@@ -178,25 +179,22 @@ class ErrorPropagation:
         :type variable_variance_dict: dict
         :return: Sympy expression of the propagated error
         """
-        variance_derivative_dict = {}
+        variable_derivative_dict = {}
         for variable in variable_variance_dict.keys():
-            if variable_variance_dict[variable] in variance_derivative_dict:
-                # what you really need should do is keep track of the varaible rather than the variance,
-                # since the variance might be reused
-                print("a duplicate was seen, this is the mistake")
-            variance_derivative_dict[variable_variance_dict[variable]] = sympy.diff(equation, variable)
+            variable_derivative_dict[variable] = sympy.diff(equation, variable)
 
         dummy = sympy.Symbol("dummy")  # I honestly, cannot remember the easier way to create an empty expression
         result = dummy
-        for variance in variance_derivative_dict.keys():
-            result = result + (variance ** 2) * (variance_derivative_dict[variance]**2)
 
-        result = result - dummy
+        for variable in variable_derivative_dict.keys():
+            result = result + (variable_variance_dict[variable] ** 2) * (variable_derivative_dict[variable]**2)
+
+        result = result - dummy  # an equally stupid way for me to do this
         result = sympy.sqrt(result)
         return result
 
 
-# GasSorptionSystem().test() # fundamentally should not work
-VaporSorptionSystem().concentration_variance()
-VaporSorptionSystem().n_p_variance()
-VaporSorptionSystem(pressure_dependent_error=False).n_p_variance()
+GasSorptionSystem().test()  # fundamentally should not work
+# VaporSorptionSystem().concentration_variance()
+# VaporSorptionSystem().n_p_variance()
+# VaporSorptionSystem(pressure_dependent_error=False).n_p_variance()
