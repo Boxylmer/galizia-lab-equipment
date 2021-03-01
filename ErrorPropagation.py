@@ -2,6 +2,8 @@ import sympy
 import os
 
 
+# first example: deterministic
+#                in this case, we may use normal error propagation with symbolic math (SymPy)
 class VaporSorptionSystem:
     def __init__(self, pressure_dependent_error=True):
 
@@ -111,72 +113,24 @@ class VaporSorptionSystem:
         print()
 
 
+# second example: iterative system that cannot have an analytical solution.
+#                 in this case, we need to use MonteCarloErrorPropagation
 class GasSorptionSystem:
-    class Constants:
-        B = sympy.Symbol("B")
-        A = sympy.Symbol("A")
-        R = sympy.Symbol("R")
-        T = sympy.Symbol("T")
-
-    def __init__(self):
-        pass
-        # self.vars = Vars()
-
-    class Vars:
-        # just a convenient wrapper for all the variable definitions
-        def __init__(self):
-            pass
-
-    class PengRobinsonEquation:
-        def __init__(self, var_subscript, constants):
-            self.vmol = sympy.Symbol("vmol_" + var_subscript)
-            self.pressure = sympy.Symbol("p_" + var_subscript)
-            self.constants = constants
-
-        def original_objective_function(self):
-            """
-                Original objective function as seen in the PR expression within the gas sorption template
-                We need to solve this analytically for molar volume of the system
-                In sympy, if you try to solve an expression, it implicitly sets the expression to zero to solve
-
-            """
-            # from VBA code:
-            # expression = vmol * (
-            #   pressure * vmol ^ 2
-            #   + (pressure * B - R * temperature) * vmol
-            #   + (A - 2 * R * temperature * B - 3 * pressure * (B ^ 2))
-            # )
-            # + pressure * B ^ 3 + R * temperature * B ^ 2 - A * B
-
-            objective = self.vmol * (
-                    self.pressure * self.vmol**2
-                    + (self.pressure * self.constants.B - self.constants.R * self.constants.T) * self.vmol
-                    + (self.constants.A - 2 * self.constants.R * self.constants.T * self.constants.B - 3 *
-                       self.pressure * (self.constants.B**2))
-                    )\
-                + self.pressure * self.constants.B ** 3 + self.constants.R * self.constants.T * self.constants.B ** 2 \
-                - self.constants.A * self.constants.B
-            return objective
-
-        def get_expression_for_moles(self):
-            print(sympy.latex(self.original_objective_function()))
-            result = sympy.solve(self.original_objective_function(), self.vmol)
-            print(len(result))
-            print(sympy.latex(sympy.simplify(result[0])))
-
-    def test(self):
-        self.PengRobinsonEquation("test", self.Constants).get_expression_for_moles()
+    pass
 
 
 class ErrorPropagation:
+    def __init__(self):
+        pass  # maybe later this can be something more object oriented, but thus far there is no need
 
     @staticmethod
     def determine_variance(equation, variable_variance_dict):
         """
-        :param equation: Sympy expression (not an equals() expression, rather, the "something" in f(x)=something
+        :param equation: Sympy expression (not an equals() expression, rather, the "something" in f(x, y, ...)=something
         :param variable_variance_dict: dict of sympy symbols or expressions
                 formatted as variables and their corresponding variances, i.e., {variable: variance, ...}
-                All variables referenced MUST be present as the same object in memory, or they will not be recognized.
+                All variables referenced in the equation MUST be present as the same object in
+                    memory, or they will not be recognized and therefore differentiated/included.
         :type variable_variance_dict: dict
         :return: Sympy expression of the propagated error
         """
@@ -185,6 +139,7 @@ class ErrorPropagation:
             variable_derivative_dict[variable] = sympy.diff(equation, variable)
 
         dummy = sympy.Symbol("dummy")  # I honestly, cannot remember the easier way to create an empty expression
+        # this doesn't impact anything significantly, so lets just pretend its an initializer and forget I did this :)
         result = dummy
 
         for variable in variable_derivative_dict.keys():
