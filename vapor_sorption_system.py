@@ -93,7 +93,7 @@ class VaporSorptionSystem:
         return self.n_p_variable * self.pen_mw / self.pol_dry_mass * 22414 * self.pol_dens / self.pen_mw
 
     def concentration_variance(self):
-        concentration_variance = sympy.simplify(ErrorPropagation.analytical_variance(
+        concentration_variance = sympy.simplify(ErrorPropagation.create_analytical_variance_function(
             self.concentration,
             self.concentration_variable_dict))
         print(sympy.latex(concentration_variance))
@@ -105,7 +105,7 @@ class VaporSorptionSystem:
             print("Pressure independent n_p error: ", end='')
         print()
 
-        n_p_variance = ErrorPropagation.analytical_variance(
+        n_p_variance = ErrorPropagation.create_analytical_variance_function(
             self.n_p(),
             self.np_variable_dict)
         print("Simplified:", sympy.latex(sympy.simplify(n_p_variance)))

@@ -1,12 +1,13 @@
 import sympy
-# import numba
+from numba import njit, prange
+
 
 class ErrorPropagation:
     def __init__(self):
         pass  # maybe later this can be something more object oriented, but thus far there is no need
 
     @staticmethod
-    def analytical_variance(equation, variable_variance_dict):
+    def create_analytical_variance_function(equation, variable_variance_dict):
         """
         :param equation: Sympy expression (not an equals() expression, rather, the "something" in f(x, y, ...)=something
         :param variable_variance_dict: dict of sympy symbols or expressions
@@ -30,3 +31,32 @@ class ErrorPropagation:
         result = result - dummy  # an equally stupid way for me to do this
         result = sympy.sqrt(result)
         return result
+
+    @staticmethod
+    @njit(parallel=True)
+    def create_monte_carlo_variance_function(
+            model,
+            inputs: list,
+            variances: list,
+            iterations=100000,
+            normal_distribution=True):
+
+        """
+        :param model:
+        :param inputs:
+        :param variances:
+        :param iterations: Number of iterations to use in the simulation
+        :param normal_distribution: bool, whether to use a normal distribution or sample variances evenly
+        :type inputs: tuple(float)
+        :type variances: tuple(float)
+        :type model: Numba JIT-compiled function
+        :type inputs: [iterable]
+
+        :return: (list, list) maximum and minimum outputs for the result of the function
+        """
+        def returned_function():
+
+            for _ in prange(iterations):
+                result = model(*inputs)
+
+
