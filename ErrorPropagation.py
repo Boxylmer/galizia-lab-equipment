@@ -1,5 +1,7 @@
 import sympy
 from numba import njit, prange
+import numba as nb
+import numpy as np
 
 
 class ErrorPropagation:
@@ -33,30 +35,66 @@ class ErrorPropagation:
         return result
 
     @staticmethod
-    @njit(parallel=True)
     def create_monte_carlo_variance_function(
             model,
-            inputs: list,
-            variances: list,
-            iterations=100000,
             normal_distribution=True):
 
-        """
-        :param model:
-        :param inputs:
-        :param variances:
-        :param iterations: Number of iterations to use in the simulation
-        :param normal_distribution: bool, whether to use a normal distribution or sample variances evenly
-        :type inputs: tuple(float)
-        :type variances: tuple(float)
-        :type model: Numba JIT-compiled function
-        :type inputs: [iterable]
+        @njit(parallel=True)
+        def returned_function(inputs, variances, iterations=1000000, num_outputs=1):
 
-        :return: (list, list) maximum and minimum outputs for the result of the function
-        """
-        def returned_function():
+            assert(len(inputs) == len(variances))  # make sure user specified inputs line up
+            num_variables = len(inputs)
 
-            for _ in prange(iterations):
-                result = model(*inputs)
+            randomly_varied_inputs = np.empty(shape=(iterations, num_variables), dtype=np.float32)
+            outputs = np.empty(shape=(iterations, num_outputs), dtype=np.float32)
+
+            for i in prange(iterations):
+                np.random.seed(i)  # seeds must be a uint32 # todo Can this be avoided and set before the for loop?
+                rand_multipliers = 2 * np.random.rand(num_variables) - 1  # should be uniformly between -1 and 1
+
+                for n in range(num_variables):
+                    randomly_varied_inputs[i][n] = inputs[n] + variances[n] * rand_multipliers[n]
+
+                outputs[i] = model(randomly_varied_inputs[i])
+
+            return randomly_varied_inputs, outputs
+
+        return returned_function
+
+    @staticmethod
+    def test():
+        # testing monte carlo generator
+        @njit
+        def example_function(input_list):
+            x, y, z = input_list
+            f = 0
+            for i in range(1000):
+                f = f + (x - y) * z
+            return f
+
+        example_measurements = (1., 2., 0.03)
+        example_variances = (0.2, 0.4, 0.001)
+        monte_carlo_example_function = ErrorPropagation.create_monte_carlo_variance_function(example_function)
+        print(monte_carlo_example_function.inspect_types())
+        result = monte_carlo_example_function(example_measurements, example_variances)
+
+        return True
+
+
+if __name__ == "__main__":
+    num_test = 0
+    num_pass = 0
+
+    print("Testing Error Propagation Core")
+    num_test += 1
+    print(" - Testing Monte Carlo Function Generator... ", end='\r')
+    if not ErrorPropagation.test():
+        test_pass = False
+        print(" - Testing Monte Carlo Function Generator [FAILED] ")
+    else:
+        num_pass += 1
+        print(" - Testing Monte Carlo Function Generator [PASSED] ")
+
+    print(str(num_pass) + "/" + str(num_test) + " tests passed.")
 
 
