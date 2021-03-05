@@ -1,6 +1,6 @@
 import sympy
-from numba import njit, prange
-import numba as nb
+from numba import njit  # , prange
+# import numba as nb
 import numpy as np
 
 
@@ -9,7 +9,7 @@ class ErrorPropagation:
         pass  # maybe later this can be something more object oriented, but thus far there is no need
 
     @staticmethod
-    def create_analytical_variance_function(equation, variable_variance_dict):
+    def create_analytical_error_function(equation, variable_variance_dict):
         """
         :param equation: Sympy expression (not an equals() expression, rather, the "something" in f(x, y, ...)=something
         :param variable_variance_dict: dict of sympy symbols or expressions
@@ -34,32 +34,78 @@ class ErrorPropagation:
         result = sympy.sqrt(result)
         return result
 
+    # @staticmethod
+    # def create_monte_carlo_variance_function(
+    #         model,
+    #         normal_distribution=True):
+    #
+    #     # @njit(parallel=True)
+    #     def returned_function(inputs, variances, iterations=1000000, num_outputs=1):
+    #         # print("Input:", inputs, "Variances: ", variances)
+    #
+    #         assert(len(inputs) == len(variances))  # make sure user specified inputs line up
+    #         num_variables = len(inputs)
+    #
+    #         randomly_varied_inputs = np.empty(shape=(iterations, num_variables), dtype=np.float32)
+    #         outputs = np.empty(shape=(iterations, num_outputs), dtype=np.float32)
+    #
+    #         for i in prange(iterations):
+    #             np.random.seed(i)  # seeds must be a uint32 # todo Can this be avoided and set before the for loop?
+    #             rand_multipliers = 2 * np.random.rand(num_variables) - 1  # should be uniformly between -1 and 1
+    #
+    #             for n in range(num_variables):
+    #                 randomly_varied_inputs[i][n] = inputs[n] + variances[n] * rand_multipliers[n]
+    #
+    #             # print("random set:", randomly_varied_inputs[i])
+    #             outputs[i] = model(randomly_varied_inputs[i])
+    #
+    #         return randomly_varied_inputs, outputs
+    #
+    #     return returned_function
+
     @staticmethod
-    def create_monte_carlo_variance_function(
-            model,
-            normal_distribution=True):
+    def monte_carlo_error(model, input_array, variance_array, iterations=100000, normal_distribution=True):
+        assert (len(input_array) == len(variance_array))  # make sure user specified inputs line up
+        num_variables = len(input_array)
 
-        @njit(parallel=True)
-        def returned_function(inputs, variances, iterations=1000000, num_outputs=1):
+        randomly_varied_inputs = np.empty(shape=(iterations, num_variables), dtype=np.float32)
+        outputs = np.empty(shape=iterations, dtype=np.float32)
+        np.random.seed(1)  # seeds must be a uint32 # todo Can this be avoided and set before the for loop?
+        progresscounter = 0
+        print()
+        for i in range(iterations):
 
-            assert(len(inputs) == len(variances))  # make sure user specified inputs line up
-            num_variables = len(inputs)
-
-            randomly_varied_inputs = np.empty(shape=(iterations, num_variables), dtype=np.float32)
-            outputs = np.empty(shape=(iterations, num_outputs), dtype=np.float32)
-
-            for i in prange(iterations):
-                np.random.seed(i)  # seeds must be a uint32 # todo Can this be avoided and set before the for loop?
+            if normal_distribution:
+                rand_multipliers = np.random.randn(num_variables)
+                # print(np.array_repr(rand_multipliers).replace('\n', ''))
+            else:
                 rand_multipliers = 2 * np.random.rand(num_variables) - 1  # should be uniformly between -1 and 1
 
-                for n in range(num_variables):
-                    randomly_varied_inputs[i][n] = inputs[n] + variances[n] * rand_multipliers[n]
+            for n in range(num_variables):
+                randomly_varied_inputs[i][n] = input_array[n] + variance_array[n] * rand_multipliers[n]
 
-                outputs[i] = model(randomly_varied_inputs[i])
+            progresscounter += 1
 
-            return randomly_varied_inputs, outputs
+            if progresscounter == 10000:
+                print(str(round(i / iterations * 100, 3)) + "% complete", end='\n')
+                progresscounter = 0
+            # print("random set:", randomly_varied_inputs[i])
+            outputs[i] = model(*randomly_varied_inputs[i])
+        return randomly_varied_inputs, outputs
 
-        return returned_function
+    @staticmethod
+    def get_uncertainty_from_monte_carlo_output(output_array):
+        return np.std(output_array)
+
+    # @staticmethod  # todo
+    # def create_monte_carlo_variance_function_from_lambda(
+    #         lambda_function,
+    #         normal_distribution=False,
+    # ):
+    #     return ErrorPropagation.create_monte_carlo_variance_function(
+    #         nb.njit(lambda_function),
+    #         normal_distribution=normal_distribution
+    #     )
 
     @staticmethod
     def test():
@@ -72,12 +118,12 @@ class ErrorPropagation:
                 f = f + (x - y) * z
             return f
 
-        example_measurements = (1., 2., 0.03)
-        example_variances = (0.2, 0.4, 0.001)
-        monte_carlo_example_function = ErrorPropagation.create_monte_carlo_variance_function(example_function)
-        print(monte_carlo_example_function.inspect_types())
-        result = monte_carlo_example_function(example_measurements, example_variances)
-
+        # example_measurements = (1., 2., 0.03)
+        # example_variances = (0.2, 1.4, 0.001)
+        # monte_carlo_example_function = ErrorPropagation.create_monte_carlo_variance_function(example_function)
+        # # print(monte_carlo_example_function.inspect_types())
+        # result = monte_carlo_example_function(example_measurements, example_variances)
+        # print(result)
         return True
 
 
@@ -96,5 +142,3 @@ if __name__ == "__main__":
         print(" - Testing Monte Carlo Function Generator [PASSED] ")
 
     print(str(num_pass) + "/" + str(num_test) + " tests passed.")
-
-
