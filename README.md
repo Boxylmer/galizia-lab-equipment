@@ -32,19 +32,25 @@ For `python 3.8`, the easiest way to do this is the `py` launcher
 
 #### Core code
 - [x] Create symbolic analytical error propagation equation generator
-- [ ] Create Monte-Carlo error propagation factory function
+- [x] Create Monte-Carlo error propagation generator
 - [ ] Create comparison and visualization tools for generators
 
 #### Vapor Sorption Apparatus 
 - [x] Create symbolic vapor sorption apparatus representation
-- [ ] Write function to export symbolic vapor sorption apparatus to a python function
-- [ ] Test and / or determine if exported functions can be optimized in Numba
-- [ ] Write test methods for analytical representation
-
+- [x] Write function to export symbolic vapor sorption apparatus to a python function
+- [ ] ~~Test and / or determine if exported functions can be optimized in Numba~~ **Not easily**
+- [x] Calculate a single monte carlo step from given input data
+- [ ] Calculate an entire isotherm using the Monte-Carlo method
+- [ ] Write test methods for analytical representation and numerical representation comparisons
+  
+   
+   - (long term goals)
+- [ ] Define a format for generating and reading template files to quickly analyze sorption isotherm data
 
 #### Gas Sorption Apparatus
 - [ ] Create python function representation
-- [ ] Figure out the best way to import the PREoS code in a sustainable way
+- [ ] Figure out the best way to import the PREoS code sustainably
+   - [ ] Check how easily this can simply be implemented in *Julia*?
 
 #### Permeation Cell Apparatus
 - [ ] Create python function representation
