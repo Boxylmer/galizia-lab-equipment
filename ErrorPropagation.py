@@ -87,10 +87,12 @@ class ErrorPropagation:
             progresscounter += 1
 
             if progresscounter == 10000:
-                print(str(round(i / iterations * 100, 3)) + "% complete", end='\n')
+                print("\r(" + str(round(i / iterations * 100, 3)) + "% complete)", end='')
+
                 progresscounter = 0
             # print("random set:", randomly_varied_inputs[i])
             outputs[i] = model(*randomly_varied_inputs[i])
+        print("\rDone (100%)")
         return randomly_varied_inputs, outputs
 
     @staticmethod
