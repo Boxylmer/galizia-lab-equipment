@@ -40,17 +40,19 @@ For `python 3.8`, the easiest way to do this is the `py` launcher
 - [x] Write function to export symbolic vapor sorption apparatus to a python function
 - [ ] ~~Test and / or determine if exported functions can be optimized in Numba~~ **Not easily**
 - [x] Calculate a single monte carlo step from given input data
-- [ ] Calculate an entire isotherm using the Monte-Carlo method
-- [ ] Write test methods for analytical representation and numerical representation comparisons
-  
+- [x] Calculate an entire isotherm using the Monte-Carlo method
+
    
    - (long term goals)
-- [ ] Define a format for generating and reading template files to quickly analyze sorption isotherm data
+- [x] Define a format for generating and reading template files to quickly analyze sorption isotherm data
+- [ ] Output generated vapor sorption isotherms (**this is the next goal**)
+
 
 #### Gas Sorption Apparatus
-- [ ] Create python function representation
+- [ ] ~~Create python function representation~~ **Not very feasible due to *Python's* speed limitations**
 - [ ] Figure out the best way to import the PREoS code sustainably
-   - [ ] Check how easily this can simply be implemented in *Julia*?
+   - [x] Check how easily this can simply be implemented in *Julia*?
+* this will need to be done in ***Julia***. There is a **lot** of work ahead of us here. 
 
 #### Permeation Cell Apparatus
 - [ ] Create python function representation
