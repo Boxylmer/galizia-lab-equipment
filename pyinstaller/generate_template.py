@@ -1,0 +1,3 @@
+import VaporSorptionSystem
+
+VaporSorptionSystem.ExcelHandler.generate_template()

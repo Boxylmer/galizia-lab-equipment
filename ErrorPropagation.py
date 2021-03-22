@@ -99,6 +99,10 @@ class ErrorPropagation:
     def get_uncertainty_from_monte_carlo_output(output_array):
         return np.std(output_array)
 
+    @staticmethod
+    def get_average_from_monte_carlo_output(output_array):
+        return np.average(output_array)
+
     # @staticmethod  # todo
     # def create_monte_carlo_variance_function_from_lambda(
     #         lambda_function,
