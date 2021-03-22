@@ -2,14 +2,15 @@ from ErrorPropagation import ErrorPropagation
 import sympy
 import numba as nb
 import matplotlib.pyplot as plt
-
+import xlsxwriter
+import pandas as pd
 # todo swap out variance for uncertainty
 
 
-def plotstuff(x1, y1, data2):
+def plotstuff(x1, y1, data2, iters):
     fig, axes = plt.subplots(2, constrained_layout=True)
     # fig.tight_layout()
-    fig.suptitle(str(VaporSorptionSystem.DEFAULT_ITERATIONS) + ' Monte-Carlo Iterations', fontsize=12)
+    fig.suptitle(str(iters) + ' Monte-Carlo Iterations', fontsize=12)
     axes[0].scatter(x1, y1, alpha=0.002, s=1)
     axes[0].set_xlabel('Pressure (Pascal)')
     axes[0].set_ylabel('Conc (cc(STP)/cc)')
@@ -137,20 +138,21 @@ class _VaporSorptionEquations:
 class VaporSorptionSystem:
     # define some constants
     R = 8.314
-    VC = 29.4778313316133
-    VS = 7.613879765219
-
-    PRESSURE_MEASUREMENT_VARIANCE = 0.15 / 100  # percent -> multiplier
-    TEMPERATURE_MEASUREMENT_VARIANCE = 1  # K
-    VC_VARIANCE = 0.098002  # cm3
-    VS_VARIANCE = 0.023176  # cm3
-
-    DEFAULT_ITERATIONS = 100000
+    # VC = 29.4778313316133
+    # VS = 7.613879765219
+    #
+    # PRESSURE_MEASUREMENT_VARIANCE = 0.15 / 100  # percent -> multiplier
+    # TEMPERATURE_MEASUREMENT_VARIANCE = 1  # K
+    # VC_VARIANCE = 0.098002  # cm3
+    # VS_VARIANCE = 0.023176  # cm3
+    #
+    # DEFAULT_ITERATIONS = 100
     USE_NORMAL_DISTRIBUTION = True
 
     def __init__(self,
                  polymer_density, polymer_mass, temperature, penetrant_mw,
-                 polymer_density_error, polymer_mass_error, temperature_error, pen_mw_error):
+                 polymer_density_error, polymer_mass_error, temperature_error, pen_mw_error,
+                 vc, vc_error, vs, vs_error, pressure_variance_percentage, mc_iterations):
 
         self.analytical_np_function = self._get_analytical_np_function()
         self.analytical_concentration_function = self._get_analytical_concentration_function()
@@ -160,6 +162,13 @@ class VaporSorptionSystem:
         self.temperature, self.temperature_error = temperature, temperature_error  # K
         self.pen_mw, self.pen_mw_error = penetrant_mw, pen_mw_error
 
+        # overall parameters
+        self.vc, self.vc_error = vc, vc_error
+        self.vs, self.vs_error = vs, vs_error
+        self.pressure_variance_percentage = pressure_variance_percentage
+        self.default_mc_iterations = mc_iterations
+
+        # calculated parameters
         self.initial_pressures = []  # pa
         self.final_pressures = []    # pa
         self.final_charge_chamber_pressures = []  # pa
@@ -205,27 +214,30 @@ class VaporSorptionSystem:
             self.calculated_np_errors.append(np_uncertainty)
             self.calculated_concentrations.append(conc_analytical)
             self.calculated_concentration_errors.append(conc_uncertainty)
-            print("STEP", step_idx, "results", "\n", "Pi:", pi, "\n", "Pf:", pf, "\n",  # "Pcf:", pcf, "\n",
+            print("STEP", step_idx, "results with", self.default_mc_iterations, "iterations", "\n",
+                  "Pi:", pi, "\n", "Pf:", pf, "\n",  # "Pcf:", pcf, "\n",
                   "pf_minus1:", pf_minus1, "\n", "pcf_minus1:", pcf_minus1, "\n", "np_minus_1:", np_minus_1, "\n",
                   "np_minus_1_uncertainty:", np_minus_1_uncertainty, "\n",
 
                   "Calculated Concentration:", self.calculated_concentrations[step_idx], "\n",
                   "Concentration uncertainty:", self.calculated_concentration_errors[step_idx], "\n",
                   "Calculated np:", self.calculated_nps[step_idx], "\n",
-                  "Calculated np uncertainty:", self.calculated_np_errors[step_idx],)
+                  "Calculated np uncertainty:", self.calculated_np_errors[step_idx], "\n",)
 
     def get_monte_carlo_step(self, pi, pf, pf_minus1, pcf_minus1, np_minus_1, np_minus_1_uncertainty):
 
         np_step_input_array = VaporSorptionSystem._create_np_input_step_array(
-            t=self.temperature, pi=pi, pf=pf, pf_minus1=pf_minus1, pcf_minus1=pcf_minus1, np_minus1=np_minus_1)
+            t=self.temperature, pi=pi, pf=pf, pf_minus1=pf_minus1, pcf_minus1=pcf_minus1, np_minus1=np_minus_1,
+            vc=self.vc, vs=self.vs)
 
         np_step_variance_array = VaporSorptionSystem._create_np_variance_array_for_experiment(
-            input_step_array=np_step_input_array, np_minus1_variance=np_minus_1_uncertainty
-        )
+            input_step_array=np_step_input_array, np_minus1_variance=np_minus_1_uncertainty,
+            t_error=self.temperature_error, p_error_percentage=self.pressure_variance_percentage,
+            vc_error=self.vc_error, vs_error=self.vs_error)
 
         np_uncertainty, np_inputs, np_mc_outputs = VaporSorptionSystem.get_monte_carlo_results(
             self.analytical_np_function, np_step_input_array, np_step_variance_array,
-            iterations=VaporSorptionSystem.DEFAULT_ITERATIONS
+            iterations=self.default_mc_iterations
         )
         np_analytical = self.analytical_np_function(*np_step_input_array)
 
@@ -237,7 +249,7 @@ class VaporSorptionSystem:
             polymer_mass_variance=self.polymer_mass_error, polymer_density_variance=self.polymer_density_error)
         conc_uncertainty, conc_inputs, conc_mc_outputs = VaporSorptionSystem.get_monte_carlo_results(
             self.analytical_concentration_function, conc_step_input_array, conc_step_variance_array,
-            iterations=VaporSorptionSystem.DEFAULT_ITERATIONS
+            iterations=self.default_mc_iterations
         )
         conc_analytical = self.analytical_concentration_function(*conc_step_input_array)
         # print(VaporSorptionSystem.DEFAULT_ITERATIONS)
@@ -246,7 +258,7 @@ class VaporSorptionSystem:
         # print("Np_uncertainty  :", np_uncertainty)
         # print("Np_value        :", np_analytical)
 
-        np_pressures = [np_input[2] for np_input in np_inputs]
+        # np_pressures = [np_input[2] for np_input in np_inputs]
         # plotstuff(np_pressures, conc_mc_outputs, conc_mc_outputs)
 
         return (np_analytical, np_uncertainty, np_mc_outputs), (conc_analytical, conc_uncertainty, conc_mc_outputs)
@@ -305,7 +317,8 @@ class VaporSorptionSystem:
 
     # Helper methods
     @staticmethod
-    def _create_np_variance_array_for_experiment(input_step_array, np_minus1_variance):
+    def _create_np_variance_array_for_experiment(input_step_array, np_minus1_variance,
+                                                 t_error, p_error_percentage, vc_error, vs_error):
 
         # signature: (R, T, pi, pf, vc, vs, pf_minus1, pcf_minus1, np_minus1)
 
@@ -314,10 +327,10 @@ class VaporSorptionSystem:
         pf_minus1_measurement = input_step_array[6]
         pcf_minus1_measurement = input_step_array[7]
 
-        temp_var = VaporSorptionSystem.TEMPERATURE_MEASUREMENT_VARIANCE  # K
-        pres_var = VaporSorptionSystem.PRESSURE_MEASUREMENT_VARIANCE  # percentage
-        vc_var = VaporSorptionSystem.VC_VARIANCE
-        vs_var = VaporSorptionSystem.VS_VARIANCE
+        temp_var = t_error  # K
+        pres_var = p_error_percentage  # percentage
+        vc_var = vc_error
+        vs_var = vs_error
         # signature: (R, T, pi, pf, vc, vs, pf_minus1, pcf_minus1, np_minus1)
         variance_step = [0, temp_var, pi_measurement * pres_var, pf_measurement * pres_var,
                          vc_var, vs_var, pf_minus1_measurement * pres_var, pcf_minus1_measurement * pres_var,
@@ -332,9 +345,9 @@ class VaporSorptionSystem:
         return [np_variance, pen_mw_variance, polymer_mass_variance, polymer_density_variance]
 
     @staticmethod
-    def _create_np_input_step_array(t, pi, pf, pf_minus1, pcf_minus1, np_minus1):
+    def _create_np_input_step_array(t, pi, pf, pf_minus1, pcf_minus1, np_minus1, vc, vs):
         # signature: (R, T, pi, pf, vc, vs, pf_minus1, pcf_minus1, np_minus1)
-        return [VaporSorptionSystem.R, t, pi, pf, VaporSorptionSystem.VC, VaporSorptionSystem.VS,
+        return [VaporSorptionSystem.R, t, pi, pf, vc, vs,
                 pf_minus1, pcf_minus1, np_minus1]
 
     @staticmethod
@@ -361,14 +374,24 @@ class VaporSorptionSystem:
         if not round(expected, sigfigs) == round(result, sigfigs):
             test_passed = False
             print("Analytical moles sorbed function failed numerical check. Expected:", expected, "Result:", result)
-
+        # VC = 29.4778313316133
+        # VS = 7.613879765219
+        #
+        # PRESSURE_MEASUREMENT_VARIANCE = 0.15 / 100  # percent -> multiplier
+        # TEMPERATURE_MEASUREMENT_VARIANCE = 1  # K
+        # VC_VARIANCE = 0.098002  # cm3
+        # VS_VARIANCE = 0.023176  # cm3
+        #
+        # DEFAULT_ITERATIONS = 100
         # check single step in the VaporSorptionSystem
         sorption_system = VaporSorptionSystem(
             polymer_density=1.393, polymer_density_error=0.001,
             polymer_mass=0.0234, polymer_mass_error=5e-5,
             penetrant_mw=32, pen_mw_error=0,
             temperature=298.15, temperature_error=1,
-        )
+            vc=29.4778313316133, vs=7.613879765219,
+            vc_error=0.098002, vs_error=0.023176,
+            pressure_variance_percentage=0.15/100, mc_iterations=10)
 
         # Deprecated
         # print(sorption_system.get_monte_carlo_step(
@@ -380,7 +403,6 @@ class VaporSorptionSystem:
         sorption_system.add_step_data(pi=3921.56620664, pf=1860.51134470, pcf=1867.33029499)
         sorption_system.add_step_data(pi=5857.47381579, pf=3801.41898539, pcf=3818.82878289)
         sorption_system.add_step_data(pi=7107.19325658, pf=5635.72490346, pcf=5643.36920230)
-        sorption_system.add_step_data(pi=8091.36872470, pf=6991.55832237, pcf=7025.70789474)
         sorption_system.add_step_data(pi=8091.36872470, pf=6991.55832237, pcf=7025.70789474)
         sorption_system.add_step_data(pi=9556.43143593, pf=8417.08552632, pcf=None)
         print(sorption_system.get_monte_carlo_isotherm())
@@ -412,10 +434,190 @@ class VaporSorptionSystem:
 # VaporSorptionSystem(pressure_dependent_error=False).n_p_variance()
 
 
+class ExcelHandler:
+
+    parameter_start_rowcol = (0, 0)
+    field_row_lookup = {"temperature": 1, "polymer density": 2, "polymer mass": 3, "penetrant mw": 4,
+                        "sampling chamber vol": 5, "charge chamber vol": 6, "pressure transducer": 7,
+                        "monte carlo iterations": 8}
+    field_col_lookup = {"Parameter Fields": 0, "value": 1, "error": 2, "units": 3}
+    parameter_units = {"temperature": "K", "polymer density": "g/cm3", "polymer mass": "g", "penetrant mw": "g/mol",
+                       "sampling chamber vol": "cm3", "charge chamber vol": "cm3",
+                       "pressure transducer": "% error / 100 (e.g, 0.15% error --> 0.0015)",
+                       "monte carlo iterations": "none"}
+
+    sorption_data_col_lookup = {"Sorption data (P in Pa)": 0, "initial pressure": 1, "final pressure": 2,
+                                "final pressure of the charge chamber after valve close": 3}
+    sorption_data_row_start = 10
+
+    @staticmethod
+    def generate_template(template_name='vapor_sorption_template (rename this immediately)', nsteps=8):
+        workbook = xlsxwriter.Workbook(template_name + ".xlsx")
+        worksheet = workbook.add_worksheet()
+
+        # do the parameter fields
+        # iterate through every parameter field
+        for key in ExcelHandler.field_row_lookup.keys():
+            # write out the parameter names
+            worksheet.write(
+                ExcelHandler.field_row_lookup[key],
+                ExcelHandler.parameter_start_rowcol[1],
+                key)
+
+            # write out the units
+            worksheet.write(
+                ExcelHandler.field_row_lookup[key],
+                ExcelHandler.field_col_lookup["units"],
+                ExcelHandler.parameter_units[key])
+
+            # write out some default errors
+            worksheet.write(ExcelHandler.field_row_lookup["temperature"],
+                            ExcelHandler.field_col_lookup["error"], 1)
+            worksheet.write(ExcelHandler.field_row_lookup["polymer density"],
+                            ExcelHandler.field_col_lookup["error"], 1e-3)
+            worksheet.write(ExcelHandler.field_row_lookup["polymer mass"],
+                            ExcelHandler.field_col_lookup["error"], 5E-05)
+            worksheet.write(ExcelHandler.field_row_lookup["penetrant mw"],
+                            ExcelHandler.field_col_lookup["error"], 0)
+            worksheet.write(ExcelHandler.field_row_lookup["sampling chamber vol"],
+                            ExcelHandler.field_col_lookup["error"], 0.023176)
+            worksheet.write(ExcelHandler.field_row_lookup["charge chamber vol"],
+                            ExcelHandler.field_col_lookup["error"], 0.098002)
+            worksheet.write(ExcelHandler.field_row_lookup["pressure transducer"],
+                            ExcelHandler.field_col_lookup["error"], 0.15/100)
+
+            # write out some default values
+            worksheet.write(ExcelHandler.field_row_lookup["sampling chamber vol"],
+                            ExcelHandler.field_col_lookup["value"], 7.613879765)
+            worksheet.write(ExcelHandler.field_row_lookup["charge chamber vol"],
+                            ExcelHandler.field_col_lookup["value"], 29.47783133)
+            worksheet.write(ExcelHandler.field_row_lookup["monte carlo iterations"],
+                            ExcelHandler.field_col_lookup["value"], 1e6)
+
+            # some fields dont have values or errors associated with them, lets fill those in to avoid confusion
+            worksheet.write(
+                ExcelHandler.field_row_lookup["pressure transducer"], ExcelHandler.field_col_lookup["value"],
+                "---")
+            worksheet.write(
+                ExcelHandler.field_row_lookup["monte carlo iterations"], ExcelHandler.field_col_lookup["units"],
+                "---")
+            worksheet.write(
+                ExcelHandler.field_row_lookup["monte carlo iterations"], ExcelHandler.field_col_lookup["error"],
+                "---")
+
+        # iterate through value/error/units (write out the parameter field headers)
+        for key in ExcelHandler.field_col_lookup.keys():
+            worksheet.write(
+                ExcelHandler.parameter_start_rowcol[0],
+                ExcelHandler.field_col_lookup[key],
+                key)
+
+        # do the sorption data fields
+        # iterate through the sorption data headers (write them out)
+        for key in ExcelHandler.sorption_data_col_lookup.keys():
+            worksheet.write(
+                ExcelHandler.sorption_data_row_start,
+                ExcelHandler.sorption_data_col_lookup[key],
+                key
+            )
+
+        # write out a step number for each step
+        for stepidx in range(1, nsteps + 1):
+            worksheet.write(
+                ExcelHandler.sorption_data_row_start + stepidx,
+                0,
+                stepidx
+            )
+        workbook.close()
+
+    @staticmethod
+    def read_template_into_sorption_system(template_path):
+        # this should read a generated template and turn it into a sorption system object
+        excel_dataframe = pd.read_excel(template_path, header=None)
+
+        temperature = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["temperature"], ExcelHandler.field_col_lookup["value"]]
+        temperature_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["temperature"], ExcelHandler.field_col_lookup["error"]]
+
+        rho = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["polymer density"], ExcelHandler.field_col_lookup["value"]]
+        rho_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["polymer density"], ExcelHandler.field_col_lookup["error"]]
+
+        pol_mass = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["polymer mass"], ExcelHandler.field_col_lookup["value"]]
+        pol_mass_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["polymer mass"], ExcelHandler.field_col_lookup["error"]]
+
+        pen_mw = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["penetrant mw"], ExcelHandler.field_col_lookup["value"]]
+        pen_mw_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["penetrant mw"], ExcelHandler.field_col_lookup["error"]]
+
+        vs = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["sampling chamber vol"], ExcelHandler.field_col_lookup["value"]]
+        vs_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["sampling chamber vol"], ExcelHandler.field_col_lookup["error"]]
+
+        vc = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["charge chamber vol"], ExcelHandler.field_col_lookup["value"]]
+        vc_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["charge chamber vol"], ExcelHandler.field_col_lookup["error"]]
+
+        # get overall parameters
+        pres_err = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["pressure transducer"], ExcelHandler.field_col_lookup["error"]]
+
+        mc_iters = excel_dataframe.iloc[
+            ExcelHandler.field_row_lookup["monte carlo iterations"], ExcelHandler.field_col_lookup["value"]]
+
+        generated_system = VaporSorptionSystem(
+            polymer_density=rho, polymer_mass=pol_mass, temperature=temperature, penetrant_mw=pen_mw,
+            polymer_density_error=rho_err, polymer_mass_error=pol_mass_err, temperature_error=temperature_err,
+            pen_mw_error=pen_mw_err,
+            vc=vc, vc_error=vc_err, vs=vs, vs_error=vs_err,
+            pressure_variance_percentage=pres_err,
+            mc_iterations=mc_iters)
+
+        # grab the isotherm data
+        nsteps = len(excel_dataframe.index) - ExcelHandler.sorption_data_row_start - 1  # -1 for the header
+        sorption_step_start = ExcelHandler.sorption_data_row_start + 1
+        sorption_step_information = []  # format: [pi, pf, pcf]
+        for stepidx in range(sorption_step_start, sorption_step_start + nsteps):
+            print(stepidx)
+            pi = excel_dataframe.iloc[stepidx, ExcelHandler.sorption_data_col_lookup["initial pressure"]]
+            pf = excel_dataframe.iloc[stepidx, ExcelHandler.sorption_data_col_lookup["final pressure"]]
+            pcf = excel_dataframe.iloc[stepidx, ExcelHandler.sorption_data_col_lookup[
+                "final pressure of the charge chamber after valve close"]]
+            sorption_step_information.append((pi, pf, pcf))
+            generated_system.add_step_data(pi=pi, pf=pf, pcf=pcf)
+        print(sorption_step_information)
+        print(generated_system.get_monte_carlo_isotherm())
+
+    @staticmethod
+    def write_results(sorption_system, output_path):
+        pass
+
+    @staticmethod
+    def test():
+        ExcelHandler.generate_template("test_template")
+        ExcelHandler.read_template_into_sorption_system("test_template_filled.xlsx")
+        return True
+
+
 if __name__ == "__main__":
     if VaporSorptionSystem.test():
-        print("All tests passed.")
+        print("Vapor Sorption System core tests passed.")
+    else:
+        print("Vapor Sorption System core tests FAILED")
 
+    if ExcelHandler.test():
+        print("Excel handler tests passed.")
+    else:
+        print("Excel handler System core tests FAILED")
+
+    print("Testing LATEX results")
     print("Moles absorbed variance:", VaporSorptionSystem.get_analytical_np_variance_latex(
         pressure_dependent_error=True))
     print("Concentration variance :", VaporSorptionSystem.get_analytical_concentration_variance_latex())
