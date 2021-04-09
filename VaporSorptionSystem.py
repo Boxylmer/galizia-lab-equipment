@@ -89,6 +89,9 @@ class _VaporSorptionEquations:
 
         # found expressions
         self.concentration = self._concentration()
+        self.np = self.n_p()
+        # self.concentration_variance = self.get_concentration_variance_function()
+        # self.np_variance = self.get_n_p_variance_function()
 
     def _init_mol_in_charge_chamber(self):
         return self.pi * (self.vc*(0.01**3)) / (self.R * self.T)
@@ -113,18 +116,20 @@ class _VaporSorptionEquations:
     def _concentration(self):
         return self.n_p_variable * self.pen_mw / self.pol_dry_mass * 22414 * self.pol_dens / self.pen_mw
 
-    def concentration_variance(self):
+    # latex generation
+    def concentration_variance_latex(self):
         concentration_variance = sympy.simplify(ErrorPropagation.create_analytical_error_function(
             self.concentration,
             self.concentration_variable_dict))
         return sympy.latex(concentration_variance)
 
-    def n_p_variance(self):
+    def n_p_variance_latex(self):
         n_p_variance = ErrorPropagation.create_analytical_error_function(
             self.n_p(),
             self.np_variable_dict)
         return sympy.latex(sympy.simplify(n_p_variance))
 
+    # function generation
     def get_concentration_function(self):
         return sympy.lambdify([self.n_p_variable, self.pen_mw, self.pol_dry_mass, self.pol_dens],
                               self.concentration)
@@ -133,6 +138,21 @@ class _VaporSorptionEquations:
         return sympy.lambdify(
             [self.R, self.T, self.pi, self.pf, self.vc, self.vs, self.pf_minus1, self.pcf_minus1, self.n_p_minus1],
             self.n_p())
+
+    def get_n_p_variance_function(self):
+        np_variance = sympy.simplify(ErrorPropagation.create_analytical_error_function(
+            self.np,
+            self.np_variable_dict))
+        return sympy.lambdify(
+            [self.R, self.T, self.pi, self.pf, self.vc, self.vs, self.pf_minus1, self.pcf_minus1, self.n_p_minus1],
+            np_variance)
+
+    def get_concentration_variance_function(self):
+        concentration_variance = sympy.simplify(ErrorPropagation.create_analytical_error_function(
+            self.concentration,
+            self.concentration_variable_dict))
+        return sympy.lambdify([self.n_p_variable, self.pen_mw, self.pol_dry_mass, self.pol_dens],
+                              concentration_variance)
 
 
 class VaporSorptionSystem:
@@ -156,6 +176,10 @@ class VaporSorptionSystem:
 
         self.analytical_np_function = self._get_analytical_np_function()
         self.analytical_concentration_function = self._get_analytical_concentration_function()
+        # self.analytical_np_variance_function = _VaporSorptionEquations(
+        #     pressure_dependent_error=True).get_n_p_variance_function()
+        # self.analytical_concentration_variance_function = _VaporSorptionEquations(
+        #     pressure_dependent_error=True).get_concentration_variance_function()
 
         self.polymer_density, self.polymer_density_error = polymer_density, polymer_density_error  # g/cm3
         self.polymer_mass, self.polymer_mass_error = polymer_mass, polymer_mass_error  # g
@@ -178,12 +202,15 @@ class VaporSorptionSystem:
         self.calculated_np_errors = []
         self.calculated_concentration_errors = []
 
+        self.analytical_np_errors = []
+        self.analytical_concentration_errors = []
+
     def add_step_data(self, pi, pf, pcf):
         self.initial_pressures.append(pi)
         self.final_pressures.append(pf)
         self.final_charge_chamber_pressures.append(pcf)
 
-    def get_monte_carlo_isotherm(self):
+    def calculate_isotherm(self):
         # todo assert used variables are actually specified
         assert len(self.initial_pressures) == len(self.final_pressures)
         assert len(self.initial_pressures) == len(self.final_charge_chamber_pressures)
@@ -206,8 +233,10 @@ class VaporSorptionSystem:
                 np_minus_1 = self.calculated_nps[step_idx - 1]
                 np_minus_1_uncertainty = self.calculated_np_errors[step_idx - 1]
 
+
+            # monte carlo errors and analytical values
             (np_analytical, np_uncertainty, np_mc_outputs), \
-                (conc_analytical, conc_uncertainty, conc_mc_outputs) = self.get_monte_carlo_step(
+                (conc_analytical, conc_uncertainty, conc_mc_outputs) = self.get_isotherm_step(
                 pi=pi, pf=pf, pf_minus1=pf_minus1, pcf_minus1=pcf_minus1,
                 np_minus_1=np_minus_1, np_minus_1_uncertainty=np_minus_1_uncertainty)
             self.calculated_nps.append(np_analytical)
@@ -224,8 +253,9 @@ class VaporSorptionSystem:
                   "Calculated np:", self.calculated_nps[step_idx], "\n",
                   "Calculated np uncertainty:", self.calculated_np_errors[step_idx], "\n",)
 
-    def get_monte_carlo_step(self, pi, pf, pf_minus1, pcf_minus1, np_minus_1, np_minus_1_uncertainty):
+    def get_isotherm_step(self, pi, pf, pf_minus1, pcf_minus1, np_minus_1, np_minus_1_uncertainty):
 
+        # np
         np_step_input_array = VaporSorptionSystem._create_np_input_step_array(
             t=self.temperature, pi=pi, pf=pf, pf_minus1=pf_minus1, pcf_minus1=pcf_minus1, np_minus1=np_minus_1,
             vc=self.vc, vs=self.vs)
@@ -239,8 +269,12 @@ class VaporSorptionSystem:
             self.analytical_np_function, np_step_input_array, np_step_variance_array,
             iterations=self.default_mc_iterations
         )
+
+        # np_analyical_variance = self.analytical_np_variance_function(*np_step_input_array)
         np_analytical = self.analytical_np_function(*np_step_input_array)
 
+
+        # concentration
         conc_step_input_array = VaporSorptionSystem._create_concentration_input_array(
             n_p=np_analytical, pen_mw=self.pen_mw, pol_dry_mass=self.polymer_mass, pol_dens=self.polymer_density)
 
@@ -311,12 +345,12 @@ class VaporSorptionSystem:
     # LaTeX generation
     @staticmethod
     def get_analytical_np_variance_latex(pressure_dependent_error=True):
-        return _VaporSorptionEquations(pressure_dependent_error=pressure_dependent_error).n_p_variance()
+        return _VaporSorptionEquations(pressure_dependent_error=pressure_dependent_error).n_p_variance_latex()
 
     @staticmethod
     def get_analytical_concentration_variance_latex():
         # right now, this equation isn't dependent on whether or not the error is pressure dependent
-        return _VaporSorptionEquations(pressure_dependent_error=True).concentration_variance()
+        return _VaporSorptionEquations(pressure_dependent_error=True).concentration_variance_latex()
 
     # Helper methods
     @staticmethod
@@ -595,7 +629,7 @@ class ExcelHandler:
             sorption_step_information.append((pi, pf, pcf))
             generated_system.add_step_data(pi=pi, pf=pf, pcf=pcf)
 
-        print(generated_system.get_monte_carlo_isotherm())
+        print(generated_system.calculate_isotherm())
 
         return generated_system
 
