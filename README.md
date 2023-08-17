@@ -1,3 +1,7 @@
+# This repo has been deprecated
+We have since transitioned the labs code over to the [Julia Programming Language](https://julialang.org/) for the sake of speed and accuracy issues that we faced in Python. Namely, the incredibly package [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl) by Mose Giordano. This repo has since been made public in its "deceased" state in the hopes that it may be useful to prospective students or any other way, shape, and form. 
+
+
 # **Galizia Lab Equipment Code Repository**
 
 ## Overview
